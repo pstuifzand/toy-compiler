@@ -1,0 +1,40 @@
+
+func test_is_100(t) {
+    100.0;
+}
+
+func test_times_2_add_1(t) {
+    2.0*t+1.0;
+}
+
+func test_add_1_times_2(t) {
+    2.0*(t+1.0);
+}
+
+func add_helper(x, y) {
+    x + y;
+}
+
+func test_call_with_2_arg(a) {
+    add_helper(a, 2.0*a);
+}
+
+func tx4(t) {
+    2.0*(t+t+t);
+}
+
+func tx3(t) {
+    (tx4(t)+(t+t+t)+(t+t+t)+t) + tx4(t);
+}
+
+func test(x) {
+    tx3(1.0+2.0+x)*(x+(1.0+2.0));
+}
+
+func testdiv(x) {
+    x / 2.00003;
+}
+
+func test_int32(x i32) i32 {
+    x + 100;
+}
