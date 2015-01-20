@@ -32,5 +32,6 @@ output2.ll: toy2 test.toy
 
 clean:
 	rm -f *.o
+	rm -f *.ll
 	rm -f toy2 toy test test2
 
