@@ -24,10 +24,10 @@ test tests[] = {
 template <class T>
 void assert_equal(T actual, T expected, int test) {
     int b = actual == expected;
-    std::cout << (b ? "ok" : "not ok") << " " << test << "\n";
+    std::cerr << (b ? "ok" : "not ok") << " " << test << "\n";
     if (!b) {
-        std::cout << "Expected: " << expected << "\n";
-        std::cout << "  Result: " << actual << "\n";
+        std::cerr << "Expected: " << expected << "\n";
+        std::cerr << "  Result: " << actual << "\n";
     }
 }
 

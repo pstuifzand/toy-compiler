@@ -1,40 +1,64 @@
 
-func test_is_100(t) {
+type vec2i struct {
+    x int32;
+    y int32;
+}
+
+type vec2f struct {
+    x float32;
+    y float32;
+}
+type vec3f struct {
+    x float32;
+    y float32;
+    z float32;
+}
+
+func test_is_100(t float64) float64 {
     100.0;
 }
 
-func test_times_2_add_1(t) {
+func test_times_2_add_1(t float64) float64 {
     2.0*t+1.0;
 }
 
-func test_add_1_times_2(t) {
+func test_add_1_times_2(t float64) float64 {
     2.0*(t+1.0);
 }
 
-func add_helper(x, y) {
+func add_helper(x float64, y float64) float64 {
     x + y;
 }
 
-func test_call_with_2_arg(a) {
+func test_call_with_2_arg(a float64) float64 {
     add_helper(a, 2.0*a);
 }
 
-func tx4(t) {
+func tx4(t float64) float64 {
     2.0*(t+t+t);
 }
 
-func tx3(t) {
-    (tx4(t)+(t+t+t)+(t+t+t)+t) + tx4(t);
+func tx3(t float64) float64 {
+    (tx4(t)+(t+t+t)+(t+t+t)+t)+tx4(t);
 }
 
-func test(x) {
+func test(x float64) float64 {
     tx3(1.0+2.0+x)*(x+(1.0+2.0));
 }
 
-func testdiv(x) {
+func testdiv(x float64) float64 {
     x / 2.00003;
 }
 
-func test_int32(x i32) i32 {
+func test_int32(x int32) int32 {
     x + 100;
 }
+
+func test_hello_world(x int32, y int8) int8 {
+    y;
+}
+
+func vec2_test(a Vec2) Vec2 {
+    a
+}
+

@@ -19,15 +19,19 @@ template<typename T>
     requires(Regular(T))
     struct value_type
 {
-        typedef T type;
+    typedef T type;
 };
 #define ValueType(T) typename value_type< T >::type
 
 template <class T>
 class tree_node;
+template <class T>
+struct tree;
 
 template <class T>
 struct tree_coordinate {
+    typedef tree<T> tree_type;
+
     tree_node<T>* ptr;
     tree_coordinate() : ptr(0) {}
     tree_coordinate(tree_node<T>* ptr) : ptr(ptr) {}
@@ -284,10 +288,11 @@ Proc traverse(C c, Proc proc)
     if (empty(c)) return proc;
     C root = c;
     visit v = pre;
-    proc(pre, c);
+    int depth = 0;
+    proc(pre, c, depth);
     do {
-        traverse_step(v, c);
-        proc(v, c);
+        depth += traverse_step(v, c);
+        proc(v, c, depth);
     } while (c != root || v != post);
     return proc;
 }
@@ -366,4 +371,23 @@ bool has_right_successor(tree_coordinate<T> c)
 {
     return !empty(right_successor(c));
 }
+
+template <typename C>
+C insert_left(C it, C to_insert) {
+    using Tree = typename C::tree_type;
+    using Cons = typename Tree::Cons;
+    C copy = bifurcate_copy<C, Cons>(to_insert);
+    set_left_successor(it, copy);
+    return copy;
+}
+
+template <typename C>
+C insert_right(C it, C to_insert) {
+    using Tree = typename C::tree_type;
+    using Cons = typename Tree::Cons;
+    C copy = bifurcate_copy<C, Cons>(to_insert);
+    set_right_successor(it, copy);
+    return copy;
+}
+
 #endif
