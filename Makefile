@@ -4,10 +4,11 @@ CXX=clang++
 LIBS= -rdynamic `llvm-config-3.5 --ldflags --system-libs --libs all` -lstdc++ ../marpa-cpp-rules/libmarpa.a
 CXXFLAGS=`llvm-config-3.5 --cxxflags` -I../marpa-cpp-rules/ -g -O0 
 
-#all: test2
-	#./test2
-all: toy2 test2.toy
-	./toy2 <test2.toy
+all: test2
+	./test2
+
+#all: toy2 test2.toy
+	#./toy2 <test2.toy
 
 test: output.o main.o
 	$(CXX) -o $@ $^ -lstdc++
@@ -27,8 +28,8 @@ toy2.o: toy2.cpp tree.hpp toy2.hpp
 output.ll: toy test.toy
 	./toy <test.toy 2> $@
 
-output2.ll: toy2 test2.toy
-	./toy2 <test2.toy > $@
+output2.ll: toy2 test.toy
+	./toy2 <test.toy > $@
 
 %.o: %.ll
 	$(CXX) -c -o $@ $< $(CXXFLAGS)

@@ -1,18 +1,17 @@
-
-type vec2i struct {
-    x int32;
-    y int32;
-}
-
-type vec2f struct {
-    x float32;
-    y float32;
-}
-type vec3f struct {
-    x float32;
-    y float32;
-    z float32;
-}
+#type vec2i struct {
+#    x int32;
+#    y int32;
+#}
+#
+#type vec2f struct {
+#    x float32;
+#    y float32;
+#}
+#type vec3f struct {
+#    x float32;
+#    y float32;
+#    z float32;
+#}
 
 func test_is_100(t float64) float64 {
     100.0;

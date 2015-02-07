@@ -958,12 +958,16 @@ static int MarpaParser() {
     marpa::grammar::symbol_id R_typedef    = g.new_symbol();
     marpa::grammar::symbol_id R_funcdef    = g.new_symbol();
     marpa::grammar::symbol_id R_expression = g.new_symbol();
+    marpa::grammar::symbol_id R_semiopt   = g.new_symbol();
 
     marpa::grammar::symbol_id R_function  = g.new_symbol();
     marpa::grammar::symbol_id R_prototype = g.new_symbol();
     marpa::grammar::symbol_id R_body      = g.new_symbol();
     marpa::grammar::symbol_id R_params    = g.new_symbol();
     marpa::grammar::symbol_id R_param     = g.new_symbol();
+
+    marpa::grammar::symbol_id R_args    = g.new_symbol();
+    marpa::grammar::symbol_id R_arg     = g.new_symbol();
 
     marpa::grammar::symbol_id R_identifierexpr = g.new_symbol();
     marpa::grammar::symbol_id R_numberexpr = g.new_symbol();
@@ -976,6 +980,7 @@ static int MarpaParser() {
     marpa::grammar::symbol_id T_id   = g.new_symbol();
     // [0-9]+
     marpa::grammar::symbol_id T_num  = g.new_symbol();
+    marpa::grammar::symbol_id T_int  = g.new_symbol();
     // left/right parent ()
     marpa::grammar::symbol_id T_lp   = g.new_symbol();
     marpa::grammar::symbol_id T_rp   = g.new_symbol();
@@ -1021,7 +1026,10 @@ static int MarpaParser() {
     rule rule_id_param     = g.add_rule(R_param, { T_id, T_id });
     // body   ::= "{" "}"
     rule rule_id_body_0 = g.add_rule(R_body, { T_lc, T_rc });
-    rule rule_id_body_1 = g.add_rule(R_body, { T_lc, R_expression, T_rc });
+    rule rule_id_body_1 = g.add_rule(R_body, { T_lc, R_expression, R_semiopt, T_rc });
+
+    rule rule_id_semiopt_0 = g.add_rule(R_semiopt, {});
+    rule rule_id_semiopt_1 = g.add_rule(R_semiopt, {T_semicolon});
 
     rule rule_id_expression_0 = g.add_rule(R_expression, { R_term });
     rule rule_id_expression_1 = g.add_rule(R_expression, { R_expression, T_plus, R_term });
@@ -1033,8 +1041,13 @@ static int MarpaParser() {
     rule rule_id_term_3       = g.add_rule(R_term,       { R_term, T_mod, R_factor });
 
     rule rule_id_factor_0     = g.add_rule(R_factor,     { T_num });
-    rule rule_id_factor_1     = g.add_rule(R_factor,     { T_id });
-    //rule rule_id_factor_2     = g.add_rule(R_factor,     { T_id });
+    rule rule_id_factor_1     = g.add_rule(R_factor,     { T_int });
+    rule rule_id_factor_2     = g.add_rule(R_factor,     { T_id });
+    rule rule_id_factor_3     = g.add_rule(R_factor,     { T_id, T_lp, R_args, T_rp });
+    rule rule_id_factor_4     = g.add_rule(R_factor,     { T_lp, R_expression, T_rp });
+
+    rule rule_id_args         = g.new_sequence(R_args, R_arg, T_comma, 0, 0);
+    rule rule_id_arg          = g.add_rule(R_arg, { R_expression });
 
     if (g.precompute() < 0) {}
 
@@ -1069,7 +1082,7 @@ static int MarpaParser() {
         }
         else if (t == tok_integer) {
             int x = IntVal;
-            r.read(T_num, x, 1);
+            r.read(T_int, x, 1);
         }
         else if (t == tok_struct) {
             r.read(T_struct, 1, 1);
@@ -1152,7 +1165,7 @@ static int MarpaParser() {
                         Tree proto = tree_stack[v.arg_0()+2];
                         Tree body  = tree_stack[v.arg_0()+4];
                         std::cerr << "func body\n";
-                        Show(begin(body));
+                        //Show(begin(body));
                         std::cerr << "end of body\n";
 
                         ast_node f{AstType::Function};
@@ -1179,7 +1192,7 @@ static int MarpaParser() {
                         Tree func_def{f, p, body};
 
                         C root = begin(func_def);
-                        Show(root);
+                        //Show(root);
                         Codegen(root);
 
                         tree_stack[v.result()] = func_def;
@@ -1190,13 +1203,12 @@ static int MarpaParser() {
                         tree_stack[v.result()] = tree_stack[v.arg_0()+1];
                     }
                     else if (rule == rule_id_params) {
+                        std::cerr << "params\n";
                         using C = tree_coordinate<ast_node>;
                         using Tree = tree<ast_node>;
                         using Cons = tree_node_construct<ast_node>;
 
                         Cons construct_node;
-
-                        std::cerr << "params\n";
 
                         ast_node comma{AstType::Comma};
 
@@ -1208,7 +1220,7 @@ static int MarpaParser() {
 
                         while (first != last) {
                             sink(it) = source(begin(*first));
-                            ////insert_left(it, begin(*first));
+                            //insert_left(it, begin(*first));
 
                             ++first;
 
@@ -1219,9 +1231,6 @@ static int MarpaParser() {
 
                             ++first;
                         }
-
-                        Show(begin(params));
-
                         tree_stack[v.result()] = params;
                     }
                     else if (rule == rule_id_param) {
@@ -1284,7 +1293,7 @@ static int MarpaParser() {
                         tree_stack[v.result()] = op;
                     }
                     else if (rule == rule_id_term_2) { // term ::= term / factor
-                        std::cerr << "term 1\n";
+                        std::cerr << "term 2\n";
                         using Tree = tree<ast_node>;
                         Tree l = tree_stack[v.arg_0()];
                         Tree r = tree_stack[v.arg_0()+2];
@@ -1294,7 +1303,7 @@ static int MarpaParser() {
                         tree_stack[v.result()] = op;
                     }
                     else if (rule == rule_id_term_3) { // term ::= term % factor
-                        std::cerr << "term 1\n";
+                        std::cerr << "term 3\n";
                         using Tree = tree<ast_node>;
                         Tree l = tree_stack[v.arg_0()];
                         Tree r = tree_stack[v.arg_0()+2];
@@ -1313,15 +1322,84 @@ static int MarpaParser() {
                     else if (rule == rule_id_factor_1) {
                         using Tree = tree<ast_node>;
                         std::cerr << "factor 1\n";
+                        int val = stack[v.arg_0()];
+                        Tree x{ast_node{val}};
+                        tree_stack[v.result()] = x;
+                    }
+                    else if (rule == rule_id_factor_2) {
+                        using Tree = tree<ast_node>;
+                        std::cerr << "factor 2\n";
                         std::string val = identifiers[stack[v.arg_0()]];
                         Tree x{ast_node{val}};
                         tree_stack[v.result()] = x;
                     }
+                    else if (rule == rule_id_factor_3) {
+                        using Tree = tree<ast_node>;
+                        using C = tree_coordinate<ast_node>;
+                        using Cons = tree_node_construct<ast_node>;
+
+                        Cons construct_node;
+                        std::cerr << "factor 3\n";
+                        std::string val = identifiers[stack[v.arg_0()]];
+                        std::cerr << "Identifier " << val << "\n";
+                        ast_node id{val};
+
+                        Tree args = tree_stack[v.arg_0()+2];
+
+                        Show(begin(args));
+
+                        ast_node call{AstType::Call};
+                        call.Name = val;
+                        Tree x{call, id, args};
+                        tree_stack[v.result()] = x;
+                    }
+                    else if (rule == rule_id_factor_4) {
+                        using Tree = tree<ast_node>;
+                        std::cerr << "factor 4\n";
+                        Tree r = tree_stack[v.arg_0()+1];
+                        tree_stack[v.result()] = r;
+                    }
+                    else if (rule == rule_id_args) {
+                        using Tree = tree<ast_node>;
+                        using C = tree_coordinate<ast_node>;
+                        using Cons = tree_node_construct<ast_node>;
+                        Cons construct_node;
+                        ast_node comma{AstType::Comma};
+
+                        Tree args{comma};
+                        C it = begin(args);
+
+                        auto first = tree_stack.begin() + v.arg_0();
+                        auto last  = tree_stack.begin() + v.arg_n()+1;
+
+                        std::cerr << "arg0=" << v.arg_0() << ", argn=" << v.arg_n() << "\n";
+
+                        while (first != last) {
+                            insert_left(it, begin(*first));
+                            ++first;
+                            if (first == last) break;
+                            set_right_successor(it, construct_node(comma));
+                            it = right_successor(it);
+                            ++first;
+                        }
+
+                        tree_stack[v.result()] = args;
+                    }
+                    else if (rule == rule_id_arg) {
+                        using Tree = tree<ast_node>;
+                        std::cerr << "arg\n";
+                        Tree x = tree_stack[v.arg_0()];
+                        Show(begin(x));
+                        tree_stack[v.result()] = tree_stack[v.arg_0()];
+                    }
                 }
                 case MARPA_STEP_NULLING_SYMBOL: {
+                    using Tree = tree<ast_node>;
                     int res    = v.result();
                     // put some value here
-                    stack[res] = v.token_value(); 
+                    stack[res] = 0;
+                    //Tree x{};
+                    //tree_stack[res] = x;
                     break;
                 }
                 case MARPA_STEP_INACTIVE:
