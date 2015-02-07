@@ -22,8 +22,8 @@ toy: toy.o
 toy2: toy2.o ../marpa-cpp-rules/errors.o
 	$(CXX) -o $@ $^ $(LIBS)
 
-toy2.cpp: tree.hpp
-toy2.o: toy2.cpp tree.hpp toy2.hpp
+toy2.cpp: tree.hpp codegen.hpp
+toy2.o: toy2.cpp tree.hpp toy2.hpp codegen.hpp
 
 output.ll: toy test.toy
 	./toy <test.toy 2> $@

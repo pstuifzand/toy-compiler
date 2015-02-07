@@ -2416,9 +2416,10 @@ int lexicographical_compare_3way(I0 f0, I0 l0, I1 f1, I1 l1, F comp)
     // Precondition: $\property{readable\_bounded\_range}(f1, l1)$
     // Precondition: $\property{three\_way\_compare}(comp)$
     while (true) {
-        if (f0 == l0)
+        if (f0 == l0) {
             if (f1 == l1) return 0;
             else return 1;
+        }
         if (f1 == l1) return -1;
         int tmp = comp(source(f0), source(f1));
         if (tmp != 0) return tmp;
