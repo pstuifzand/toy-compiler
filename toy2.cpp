@@ -29,6 +29,7 @@
 #include "symbol_table.h"
 #include "error.h"
 
+#include "eop-code/eop.h"
 #include "tree.hpp"
 
 using namespace llvm;

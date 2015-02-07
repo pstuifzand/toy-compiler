@@ -2,7 +2,7 @@ CXX=clang++
 #CXXFLAGS=`llvm-config-3.5 --cxxflags all`
 #LIBS=`llvm-config-3.5 --libs all`
 LIBS= -rdynamic `llvm-config-3.5 --ldflags --system-libs --libs all` -lstdc++ ../marpa-cpp-rules/libmarpa.a
-CXXFLAGS=`llvm-config-3.5 --cxxflags` -I../marpa-cpp-rules/ -g -O0 
+CXXFLAGS=`llvm-config-3.5 --cxxflags` -g -O0 
 
 all: test2
 	./test2
