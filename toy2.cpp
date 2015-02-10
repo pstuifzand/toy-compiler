@@ -30,6 +30,11 @@ const char* AstTypesNames[] = {
     "Type",
     "Struct",
     "StructMember",
+    "If",
+    "Else",
+    "Stmt",
+    "Return",
+    "Assignment",
 };
 
 const char* BuiltInTypeNames[] = {
@@ -44,9 +49,10 @@ const char* BuiltInTypeNames[] = {
     "uint64",
     "float32",
     "float64",
+    "void",
 };
 
-llvm::Type* ConvertType(TypeCode type_code)
+llvm::Type* convert_type(TypeCode type_code)
 {
     // TODO uitbreiden
     if (type_code == TypeCode::Float64) {
@@ -61,6 +67,8 @@ llvm::Type* ConvertType(TypeCode type_code)
         return llvm::Type::getInt16Ty(llvm::getGlobalContext());
     } else if (type_code == TypeCode::Int8) {
         return llvm::Type::getInt8Ty(llvm::getGlobalContext());
+    } else if (type_code == TypeCode::Void) {
+        return llvm::Type::getVoidTy(llvm::getGlobalContext());
     }
 
     // TODO error
@@ -153,6 +161,15 @@ enum Token {
   tok_integer    = -6,
   tok_struct     = -7,
   tok_type       = -8,
+
+  tok_if         = -9,
+
+  tok_return     = -10,
+
+  tok_false      = -11,
+  tok_true       = -12,
+
+  tok_else       = -13,
 };
 
 static std::string IdentifierStr;  // Filled in if tok_identifier
@@ -182,11 +199,16 @@ static int gettok() {
     while (isident((LastChar = mygetchar())))
       IdentifierStr += LastChar;
 
-    if (IdentifierStr == "def") return tok_def;
-    if (IdentifierStr == "func") return tok_def;
-    if (IdentifierStr == "type") return tok_type;
+    if (IdentifierStr == "def")    return tok_def;
+    if (IdentifierStr == "func")   return tok_def;
+    if (IdentifierStr == "type")   return tok_type;
     if (IdentifierStr == "struct") return tok_struct;
     if (IdentifierStr == "extern") return tok_extern;
+    if (IdentifierStr == "if")     return tok_if;
+    if (IdentifierStr == "else")   return tok_else;
+    if (IdentifierStr == "return") return tok_return;
+    if (IdentifierStr == "false")  return tok_false;
+    if (IdentifierStr == "true")   return tok_true;
     return tok_identifier;
   }
 
@@ -251,8 +273,10 @@ struct printer {
             std::cerr << indent << "Type: " << n.TCode << "\n";
             if (n.Type == AstType::Variable || n.Type == AstType::Param) {
                 std::cerr << indent << "Name: " << n.Name << "\n";
-            } else if (n.Type == AstType::Number) {
+            } else if (n.Type == AstType::Number && n.TCode == TypeCode::Float64) {
                 std::cerr << indent << "Val: " << n.Val << "\n";
+            } else if (n.Type == AstType::Number && n.TCode == TypeCode::Int32) {
+                std::cerr << indent << "IVal: " << n.IVal << "\n";
             } else if (n.Type == AstType::Struct) {
                 std::cerr << indent << "Name: " << n.Name << "\n";
                 std::string indent(size_t((depth+2)*depth_mul), ' ');
@@ -309,6 +333,20 @@ static int MarpaParser(llvm::Module* TheModule, llvm::FunctionPassManager* TheFP
     marpa::grammar::symbol_id R_term   = g.new_symbol();
     marpa::grammar::symbol_id R_factor = g.new_symbol();
 
+    marpa::grammar::symbol_id R_compound          = g.new_symbol();
+    marpa::grammar::symbol_id R_statements        = g.new_symbol();
+    marpa::grammar::symbol_id R_statement         = g.new_symbol();
+
+    marpa::grammar::symbol_id R_simple_statement  = g.new_symbol();
+    marpa::grammar::symbol_id R_assignment        = g.new_symbol();
+    marpa::grammar::symbol_id R_control_statement = g.new_symbol();
+
+    marpa::grammar::symbol_id R_conditional       = g.new_symbol();
+    marpa::grammar::symbol_id T_return            = g.new_symbol();
+
+    marpa::grammar::symbol_id T_if     = g.new_symbol();
+    marpa::grammar::symbol_id T_else   = g.new_symbol();
+
     // [a-z]+
     marpa::grammar::symbol_id T_id   = g.new_symbol();
     // [0-9]+
@@ -340,6 +378,9 @@ static int MarpaParser(llvm::Module* TheModule, llvm::FunctionPassManager* TheFP
     marpa::grammar::symbol_id T_semicolon = g.new_symbol();
     marpa::grammar::symbol_id T_comma = g.new_symbol();
 
+    marpa::grammar::symbol_id T_false = g.new_symbol();
+    marpa::grammar::symbol_id T_true  = g.new_symbol();
+
     g.start_symbol(R_top);
 
     // top   ::= top_0+ ';'
@@ -358,11 +399,22 @@ static int MarpaParser(llvm::Module* TheModule, llvm::FunctionPassManager* TheFP
     // param   ::= id id
     rule rule_id_param     = g.add_rule(R_param, { T_id, T_id });
     // body   ::= "{" "}"
-    rule rule_id_body_0 = g.add_rule(R_body, { T_lc, T_rc });
-    rule rule_id_body_1 = g.add_rule(R_body, { T_lc, R_expression, R_semiopt, T_rc });
+    
+    rule rule_id_body       = g.add_rule(R_body, { R_compound });
+    rule rule_id_compound   = g.add_rule(R_compound, { T_lc, R_statements, T_rc });
+    rule rule_id_statements = g.new_sequence(R_statements, R_statement, -1, 0, 0);
 
-    rule rule_id_semiopt_0 = g.add_rule(R_semiopt, {});
-    rule rule_id_semiopt_1 = g.add_rule(R_semiopt, {T_semicolon});
+    rule rule_id_statement_0 = g.add_rule(R_statement, { R_simple_statement });
+    rule rule_id_statement_1 = g.add_rule(R_statement, { R_control_statement });
+    rule rule_id_statement_2 = g.add_rule(R_statement, { R_compound });
+    rule rule_id_statement_3 = g.add_rule(R_statement, { R_assignment });
+
+    rule rule_id_simple_statement    = g.add_rule(R_simple_statement, { R_expression, T_semicolon });
+    rule rule_id_control_statement_0 = g.add_rule(R_control_statement, { R_conditional });
+    rule rule_id_control_statement_1 = g.add_rule(R_control_statement, { T_return, R_expression, T_semicolon });
+    rule rule_id_conditional_0       = g.add_rule(R_conditional, { T_if, T_lp, R_expression, T_rp, R_statement });
+    rule rule_id_conditional_1       = g.add_rule(R_conditional, { T_if, T_lp, R_expression, T_rp, R_statement, T_else, R_statement });
+    rule rule_id_assignment          = g.add_rule(R_assignment,  { R_expression, T_assign, R_expression, T_semicolon });
 
     rule rule_id_expression_0 = g.add_rule(R_expression, { R_term });
     rule rule_id_expression_1 = g.add_rule(R_expression, { R_expression, T_plus, R_term });
@@ -378,6 +430,8 @@ static int MarpaParser(llvm::Module* TheModule, llvm::FunctionPassManager* TheFP
     rule rule_id_factor_2     = g.add_rule(R_factor,     { T_id });
     rule rule_id_factor_3     = g.add_rule(R_factor,     { T_id, T_lp, R_args, T_rp });
     rule rule_id_factor_4     = g.add_rule(R_factor,     { T_lp, R_expression, T_rp });
+    rule rule_id_factor_5     = g.add_rule(R_factor,     { T_false });
+    rule rule_id_factor_6     = g.add_rule(R_factor,     { T_true });
 
     rule rule_id_args         = g.new_sequence(R_args, R_arg, T_comma, 0, 0);
     rule rule_id_arg          = g.add_rule(R_arg, { R_expression });
@@ -399,7 +453,7 @@ static int MarpaParser(llvm::Module* TheModule, llvm::FunctionPassManager* TheFP
         */
         if (t == tok_eof) break;
         else if (t == tok_def) {
-            r.read(T_func, 1, 1);
+            r.read(T_func, 1, 1, line);
         }
         else if (t == tok_extern) {
             std::cerr << "extern token found - not implemented\n";
@@ -407,34 +461,47 @@ static int MarpaParser(llvm::Module* TheModule, llvm::FunctionPassManager* TheFP
         }
         else if (t == tok_identifier) {
             int x = identifiers.add(IdentifierStr);
-            r.read(T_id, x, 1);
+            r.read(T_id, x, 1, line);
         }
         else if (t == tok_number) {
             int x = numbers.add(NumVal);
-            r.read(T_num, x, 1);
+            r.read(T_num, x, 1, line);
         }
         else if (t == tok_integer) {
             int x = IntVal;
-            r.read(T_int, x, 1);
+            r.read(T_int, x, 1, line);
         }
         else if (t == tok_struct) {
-            r.read(T_struct, 1, 1);
+            r.read(T_struct, 1, 1, line);
         }
         else if (t == tok_type) {
-            r.read(T_type, 1, 1);
+            r.read(T_type, 1, 1, line);
         }
-        else if (t == '(') r.read(T_lp, 1, 1);
-        else if (t == ')') r.read(T_rp, 1, 1);
-        else if (t == '{') r.read(T_lc, 1, 1);
-        else if (t == '}') r.read(T_rc, 1, 1);
-        else if (t == '=') r.read(T_assign, 1, 1);
-        else if (t == '+') r.read(T_plus, 1, 1);
-        else if (t == '-') r.read(T_min, 1, 1);
-        else if (t == '*') r.read(T_mul, 1, 1);
-        else if (t == '/') r.read(T_div, 1, 1);
-        else if (t == '%') r.read(T_mod, 1, 1);
-        else if (t == ';') r.read(T_semicolon, 1, 1);
-        else if (t == ',') r.read(T_comma, 1, 1);
+        else if (t == tok_if) {
+            r.read(T_if, 1, 1, line);
+        }
+        else if (t == tok_else) {
+            r.read(T_else, 1, 1, line);
+        }
+        else if (t == tok_return) {
+            r.read(T_return, 1, 1, line);
+        }
+        else if (t == '(') r.read(T_lp, 1, 1, line);
+        else if (t == ')') r.read(T_rp, 1, 1, line);
+        else if (t == '{') r.read(T_lc, 1, 1, line);
+        else if (t == '}') r.read(T_rc, 1, 1, line);
+        else if (t == '=') r.read(T_assign, 1, 1, line);
+        else if (t == '+') r.read(T_plus, 1, 1, line);
+        else if (t == '-') r.read(T_min, 1, 1, line);
+        else if (t == '*') r.read(T_mul, 1, 1, line);
+        else if (t == '/') r.read(T_div, 1, 1, line);
+        else if (t == '%') r.read(T_mod, 1, 1, line);
+        else if (t == ';') r.read(T_semicolon, 1, 1, line);
+        else if (t == ',') r.read(T_comma, 1, 1, line);
+        //else if (t == '<') r.read(T_lt, 1, 1, line);
+        //else if (t == '>') r.read(T_gt, 1, 1, line);
+        else if (t == tok_false) r.read(T_false, 1, 1, line);
+        else if (t == tok_true) r.read(T_true, 1, 1, line);
         else {
             std::cerr << "Unknown token\n";
         }
@@ -450,6 +517,10 @@ static int MarpaParser(llvm::Module* TheModule, llvm::FunctionPassManager* TheFP
 
     marpa::order o{b};
     marpa::tree t{o};
+
+    using C = tree_coordinate<ast_node>;
+    using Tree = tree<ast_node>;
+    using Cons = tree_node_construct<ast_node>;
 
     /* Evaluate trees */
     while (t.next() >= 0) {
@@ -482,24 +553,15 @@ static int MarpaParser(llvm::Module* TheModule, llvm::FunctionPassManager* TheFP
                     else if (rule == rule_id_top_0_0) {}
                     else if (rule == rule_id_top_0_1) {}
                     else if (rule == rule_id_funcdef) {
-                        using Tree = tree<ast_node>;
-                        using C = tree_coordinate<ast_node>;
-                        std::cerr << "func definition\n";
-
                         int name_value = stack[v.arg_0() + 1];
-                        //int proto_value = stack[v.arg_0() + 2];
-                        int ret_type_value = stack[v.arg_0() + 3];
-                        //int body_value = stack[v.arg_0() + 4];
-
                         std::string name = identifiers[name_value];
+
+                        Tree proto = tree_stack[v.arg_0()+2];
+
+                        int ret_type_value = stack[v.arg_0() + 3];
                         std::string type = identifiers[ret_type_value];
 
-                        std::cerr << "func def " << name << " ret type " << type << "\n";
-                        Tree proto = tree_stack[v.arg_0()+2];
                         Tree body  = tree_stack[v.arg_0()+4];
-                        std::cerr << "func body\n";
-                        //Show(begin(body));
-                        std::cerr << "end of body\n";
 
                         ast_node f{AstType::Function};
                         ast_node prototype{AstType::Prototype};
@@ -525,19 +587,14 @@ static int MarpaParser(llvm::Module* TheModule, llvm::FunctionPassManager* TheFP
                         Tree func_def{f, p, body};
 
                         C root = begin(func_def);
-                        //Show(root);
-                        Codegen(TheModule, TheFPM, root);
+                        Show(root);
+                        codegen(TheModule, TheFPM, root);
                         tree_stack[v.result()] = func_def;
                     }
                     else if (rule == rule_id_prototype) {
-                        std::cerr << "prototype\n";
                         tree_stack[v.result()] = tree_stack[v.arg_0()+1];
                     }
                     else if (rule == rule_id_params) {
-                        std::cerr << "params\n";
-                        using C = tree_coordinate<ast_node>;
-                        using Tree = tree<ast_node>;
-                        using Cons = tree_node_construct<ast_node>;
 
                         Cons construct_node;
 
@@ -574,24 +631,91 @@ static int MarpaParser(llvm::Module* TheModule, llvm::FunctionPassManager* TheFP
                         ast_node param{AstType::Param};
                         param.TCode = BuiltInToTypecode(type.c_str());
                         param.Name  = id;
-                        std::cerr << "param id = " << id << ", type = " << type << "\n";
                         tree_stack[v.result()] = tree<ast_node>(param);
                     }
-                    else if (rule == rule_id_body_0) {
-                        std::cerr << "body 0\n";
-                        tree_stack[v.result()] = tree<ast_node>();
-                    }
-                    else if (rule == rule_id_body_1) {
-                        std::cerr << "body 1\n";
-                        tree_stack[v.result()] = tree_stack[v.arg_0()+1];
-                    }
-                    else if (rule == rule_id_expression_0) {
-                        std::cerr << "expression 0\n";
+                    else if (rule == rule_id_body) {
                         tree_stack[v.result()] = tree_stack[v.arg_0()];
                     }
+                    else if (rule == rule_id_compound) {
+                        tree_stack[v.result()] = tree_stack[v.arg_0()+1];
+                    }
+                    else if (rule == rule_id_statements) {
+                        // sequence
+                        Cons construct_node;
+
+                        ast_node stmt{AstType::Stmt};
+
+                        Tree statements{stmt};
+                        C it = begin(statements);
+
+                        auto first = tree_stack.begin() + v.arg_0();
+                        auto last  = tree_stack.begin() + v.arg_n()+1;
+
+                        while (first != last) {
+                            //sink(it) = source(begin(*first));
+                            insert_left(it, begin(*first));
+                            ++first;
+
+                            if (first == last) break;
+                            set_right_successor(it, construct_node(stmt));
+                            it = right_successor(it);
+                        }
+                        tree_stack[v.result()] = statements;
+                    }
+                    else if (rule == rule_id_statement_0) {
+                        tree_stack[v.result()] = tree_stack[v.arg_0()];
+                    }
+                    else if (rule == rule_id_statement_1) {
+                        tree_stack[v.result()] = tree_stack[v.arg_0()];
+                    }
+                    else if (rule == rule_id_statement_2) {
+                        tree_stack[v.result()] = tree_stack[v.arg_0()];
+                    }
+                    else if (rule == rule_id_statement_3) {
+                        tree_stack[v.result()] = tree_stack[v.arg_0()];
+                    }
+                    else if (rule == rule_id_simple_statement) {
+                        tree_stack[v.result()] = tree_stack[v.arg_0()];
+                    }
+                    else if (rule == rule_id_control_statement_0) {
+                        tree_stack[v.result()] = tree_stack[v.arg_0()];
+                    }
+                    else if (rule == rule_id_control_statement_1) { // 'return' expr ';'
+                        Tree expr = tree_stack[v.arg_0()+1];
+                        Tree empty;
+                        ast_node return_node{AstType::Return};
+                        Tree return_tree{return_node, expr, empty};
+                        tree_stack[v.result()] = return_tree;
+                    }
+                    else if (rule == rule_id_conditional_0) { // if '(' expr ')' stmt
+                        Tree& cond  = tree_stack[v.arg_0()+2];
+                        Tree& stmts = tree_stack[v.arg_0()+4];
+                        ast_node if_node{AstType::If};
+                        Tree if_tree{if_node, cond, stmts};
+                        tree_stack[v.result()] = if_tree;
+                    }
+                    else if (rule == rule_id_conditional_1) { // if '(' expr ')' stmt 'else' stmt
+                        Tree& cond  = tree_stack[v.arg_0()+2];
+                        Tree& if_block = tree_stack[v.arg_0()+4];
+                        Tree& else_block = tree_stack[v.arg_0()+6];
+                        ast_node if_node{AstType::If};
+                        ast_node else_node{AstType::Else};
+                        Tree else_tree{else_node, if_block, else_block};
+                        Tree if_tree{if_node, cond, else_tree};
+                        tree_stack[v.result()] = if_tree;
+                    }
+                    else if (rule == rule_id_assignment) { // expr '=' expr
+                        Tree& var_block = tree_stack[v.arg_0()];
+                        Tree& val_block = tree_stack[v.arg_0()+2];
+                        ast_node assign_node{AstType::Assignment};
+                        Tree assign_tree{assign_node, var_block, val_block};
+                        tree_stack[v.result()] = assign_tree;
+                    }
+                    else if (rule == rule_id_expression_0) {
+                        Tree expr = tree_stack[v.arg_0()];
+                        tree_stack[v.result()] = expr;
+                    }
                     else if (rule == rule_id_expression_1) { // expr ::= expr + term
-                        std::cerr << "expression 1\n";
-                        using Tree = tree<ast_node>;
                         Tree l = tree_stack[v.arg_0()];
                         Tree r = tree_stack[v.arg_0()+2];
                         ast_node binop{AstType::Binary};
@@ -600,8 +724,6 @@ static int MarpaParser(llvm::Module* TheModule, llvm::FunctionPassManager* TheFP
                         tree_stack[v.result()] = op;
                     }
                     else if (rule == rule_id_expression_2) { // expr ::= expr - term
-                        std::cerr << "expression 2\n";
-                        using Tree = tree<ast_node>;
                         Tree l = tree_stack[v.arg_0()];
                         Tree r = tree_stack[v.arg_0()+2];
                         ast_node binop{AstType::Binary};
@@ -610,12 +732,10 @@ static int MarpaParser(llvm::Module* TheModule, llvm::FunctionPassManager* TheFP
                         tree_stack[v.result()] = op;
                     }
                     else if (rule == rule_id_term_0) {
-                        std::cerr << "term 0\n";
-                        tree_stack[v.result()] = tree_stack[v.arg_0()];
+                        Tree expr = tree_stack[v.arg_0()];
+                        tree_stack[v.result()] = expr;
                     }
                     else if (rule == rule_id_term_1) { // term ::= term * factor
-                        std::cerr << "term 1\n";
-                        using Tree = tree<ast_node>;
                         Tree l = tree_stack[v.arg_0()];
                         Tree r = tree_stack[v.arg_0()+2];
                         ast_node binop{AstType::Binary};
@@ -624,8 +744,6 @@ static int MarpaParser(llvm::Module* TheModule, llvm::FunctionPassManager* TheFP
                         tree_stack[v.result()] = op;
                     }
                     else if (rule == rule_id_term_2) { // term ::= term / factor
-                        std::cerr << "term 2\n";
-                        using Tree = tree<ast_node>;
                         Tree l = tree_stack[v.arg_0()];
                         Tree r = tree_stack[v.arg_0()+2];
                         ast_node binop{AstType::Binary};
@@ -634,8 +752,6 @@ static int MarpaParser(llvm::Module* TheModule, llvm::FunctionPassManager* TheFP
                         tree_stack[v.result()] = op;
                     }
                     else if (rule == rule_id_term_3) { // term ::= term % factor
-                        std::cerr << "term 3\n";
-                        using Tree = tree<ast_node>;
                         Tree l = tree_stack[v.arg_0()];
                         Tree r = tree_stack[v.arg_0()+2];
                         ast_node binop{AstType::Binary};
@@ -644,40 +760,29 @@ static int MarpaParser(llvm::Module* TheModule, llvm::FunctionPassManager* TheFP
                         tree_stack[v.result()] = op;
                     }
                     else if (rule == rule_id_factor_0) {
-                        using Tree = tree<ast_node>;
-                        std::cerr << "factor 0\n";
                         double val = numbers[stack[v.arg_0()]];
-                        Tree x{ast_node{val}};
+                        ast_node n{val};
+                        Tree x{n};
                         tree_stack[v.result()] = x;
                     }
                     else if (rule == rule_id_factor_1) {
-                        using Tree = tree<ast_node>;
-                        std::cerr << "factor 1\n";
                         int val = stack[v.arg_0()];
-                        Tree x{ast_node{val}};
+                        ast_node n{val};
+                        Tree x{n};
                         tree_stack[v.result()] = x;
                     }
                     else if (rule == rule_id_factor_2) {
-                        using Tree = tree<ast_node>;
-                        std::cerr << "factor 2\n";
                         std::string val = identifiers[stack[v.arg_0()]];
-                        Tree x{ast_node{val}};
+                        ast_node n{val};
+                        Tree x{n};
                         tree_stack[v.result()] = x;
                     }
                     else if (rule == rule_id_factor_3) {
-                        using Tree = tree<ast_node>;
-                        using C = tree_coordinate<ast_node>;
-                        using Cons = tree_node_construct<ast_node>;
-
                         Cons construct_node;
-                        std::cerr << "factor 3\n";
                         std::string val = identifiers[stack[v.arg_0()]];
-                        std::cerr << "Identifier " << val << "\n";
                         ast_node id{val};
 
                         Tree args = tree_stack[v.arg_0()+2];
-
-                        Show(begin(args));
 
                         ast_node call{AstType::Call};
                         call.Name = val;
@@ -685,15 +790,18 @@ static int MarpaParser(llvm::Module* TheModule, llvm::FunctionPassManager* TheFP
                         tree_stack[v.result()] = x;
                     }
                     else if (rule == rule_id_factor_4) {
-                        using Tree = tree<ast_node>;
-                        std::cerr << "factor 4\n";
                         Tree r = tree_stack[v.arg_0()+1];
                         tree_stack[v.result()] = r;
                     }
+                    else if (rule == rule_id_factor_5) { // false
+                        Tree x{ast_node{0}};
+                        tree_stack[v.result()] = x;
+                    }
+                    else if (rule == rule_id_factor_6) { // true
+                        Tree x{ast_node{1}};
+                        tree_stack[v.result()] = x;
+                    }
                     else if (rule == rule_id_args) {
-                        using Tree = tree<ast_node>;
-                        using C = tree_coordinate<ast_node>;
-                        using Cons = tree_node_construct<ast_node>;
                         Cons construct_node;
                         ast_node comma{AstType::Comma};
 
@@ -702,8 +810,6 @@ static int MarpaParser(llvm::Module* TheModule, llvm::FunctionPassManager* TheFP
 
                         auto first = tree_stack.begin() + v.arg_0();
                         auto last  = tree_stack.begin() + v.arg_n()+1;
-
-                        std::cerr << "arg0=" << v.arg_0() << ", argn=" << v.arg_n() << "\n";
 
                         while (first != last) {
                             insert_left(it, begin(*first));
@@ -717,10 +823,7 @@ static int MarpaParser(llvm::Module* TheModule, llvm::FunctionPassManager* TheFP
                         tree_stack[v.result()] = args;
                     }
                     else if (rule == rule_id_arg) {
-                        using Tree = tree<ast_node>;
-                        std::cerr << "arg\n";
                         Tree x = tree_stack[v.arg_0()];
-                        Show(begin(x));
                         tree_stack[v.result()] = tree_stack[v.arg_0()];
                     }
                 }
@@ -783,6 +886,8 @@ int main(int argc, char** argv) {
     FunctionPassManager OurFPM(TheModule);
 
     //OurFPM.add(new DataLayoutPass());
+    //
+    /*
 
     // Set up the optimizer pipeline.  Start with registering info about how the
     // target lays out data structures.
@@ -800,6 +905,7 @@ int main(int argc, char** argv) {
     // Simplify the control flow graph (deleting unreachable blocks, etc).
     OurFPM.add(createCFGSimplificationPass());
 
+    */
     OurFPM.doInitialization();
 
     // Set the global so the code gen can use this.

@@ -15,6 +15,11 @@ enum class AstType {
     Type,
     Struct,
     StructMember,
+    If,
+    Else,
+    Stmt,
+    Return,
+    Assignment,
 };
 
 enum class TypeCode {
@@ -29,6 +34,7 @@ enum class TypeCode {
     UInt64,
     Float32,
     Float64,
+    Void,
     MaxBuiltIn,
 };
 

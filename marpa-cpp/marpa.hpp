@@ -6,6 +6,7 @@ extern "C" {
 //#include <marpa_api.h>
 }
 
+extern const char* marpa_errors[92];
 namespace marpa {
 
 class value;
@@ -153,13 +154,14 @@ class recognizer {
             return marpa_r_latest_earley_set(handle);
         }
 
-        int read(grammar::symbol_id sym_id, int value, int length) {
+        int read(grammar::symbol_id sym_id, int value, int length, int line = -1) {
             if (value == 0) {
                 //throw "value == 0";
                 return 0;
             }
             int error = alternative(sym_id, value, length);
             if (error != MARPA_ERR_NONE) {
+                std::cerr << "test2.toy:" << line << ": Error: " << marpa_errors[error] << "\n";
                 return error;
             }
             return earleme_complete();
